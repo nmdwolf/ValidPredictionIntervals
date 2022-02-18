@@ -1,5 +1,7 @@
-from scipy.optimize import root_scalar
 from Code.QualityMeasures import *
+
+from scipy.optimize import root_scalar
+
 import math
 import numpy as np
 import warnings
@@ -7,15 +9,16 @@ import warnings
 __CONDITIONAL_MIN__ = 2
 
 
-# helper function for the calculation of (empirical) percentiles:
-def empirical_percentile(data, percentile):
+# helper function for the calculation of percentiles:
+def empirical_percentile(data, quantile):
     sorted = np.sort(data)
-    # print(sorted)
-    index = math.ceil(percentile * (1 + len(sorted))) - 1
+    index = math.ceil(quantile * (1 + len(sorted))) - 1 # index corresponding to inflated quantile
     return sorted[min(max(0, index), len(sorted) - 1)]
 
 ############################
 ############################
+
+
 
 def DISTscore(model, val_X, val_y):
     preds = model(val_X).squeeze()
@@ -27,21 +30,6 @@ def QRscore(model, val_X, val_y):
         preds = preds.numpy()
     preds = preds.squeeze()
     return np.maximum(preds[:, 0] - val_y, val_y - preds[:, 1])
-
-def find_roots(f, x, miny, maxy, quantile):
-    result = np.zeros(x.shape[0])
-    for i in range(x.shape[0]):
-        result[i] = root_scalar(lambda y: f(x[i].reshape(1, -1), y) - quantile, bracket = [miny-3, maxy+3], method = "bisect").root
-    return result
-
-def QRFscore(model, val_X, val_y):
-
-    miny = np.min(val_y)
-    maxy = np.max(val_y)
-
-    lower = find_roots(model, val_X, miny, maxy, alpha / 2)
-    upper = find_roots(model, val_X, miny, maxy, 1 - (alpha / 2))
-    return np.maximum(lower - val_y, val_y - upper)
 
 # General (inductive) conformalization method
 #
@@ -57,7 +45,7 @@ def CP(f, val_X, val_y, alpha = 0.1):
 ################################################################################
 ################################################################################
 #
-#   Conditional CP
+#   Conditional CP (not actively used yet !!!!)
 #
 ################################################################################
 ################################################################################
@@ -177,19 +165,15 @@ class Conformalizer():
                 self.conditional_thresholds[i] = np.Inf
 
     def train(self, x, y, suppress_verbosity = False):
-        # self.threshold = CP(lambda x, y: self.__score(self.train_model, x, y), x, y, self.container.alpha())
-
         if self.container.cp_mode():
             self.threshold = empirical_percentile(self.__score(self.train_model, x, y), 1 - self.container.alpha())
             if self.container.verbosity() > 1 and not suppress_verbosity:
                 print("Conformalized with threshold:", self.threshold)
                 print()
 
+    # NOT USED YET
     def train_conditional(self, x, y, suppress_verbosity = False):
-        # self.__conditional_thresholds = conditionalCP(lambda x, y: self.container.score(self.model, x, y), self.container.taxonomy_func(), x, y, self.container.alpha())
-
         if self.container.cp_mode():
-#            self.conditional_thresholds = conditionalCP(lambda x, y: self.__score(self.train_model, x, y), self.container.taxonomy_func(), x, y, self.container.alpha(), suppress_verbosity)
             self.conditional_thresholds.update(conditionalCP(lambda x, y: self.__score(self.train_model, x, y), self.container.taxonomy_func(), x, y, self.container.alpha(), suppress_verbosity))
 
     def apply(self, x, y):
@@ -224,6 +208,7 @@ class PointConformalizer(Conformalizer):
             print("Performance:", self.container["cp_perf"])
             print()
 
+    # NOT USED YET
     def apply_conditional(self, x, y):
 
         preds = self.model(x)
@@ -291,6 +276,7 @@ class EnsembleConformalizer(Conformalizer):
                 print("Conformalized Performance:", self.container["cp_perf"])
                 print()
 
+    # NOT USED YET
     def apply_conditional(self, x, y):
 
         preds = self.model(x)
@@ -326,49 +312,6 @@ class EnsembleConformalizer(Conformalizer):
                     self.container["conditional_cp_width", t] = MPIW(lower[index], upper[index], y[index])
                     self.container["conditional_cp_perf", t] = self.container.perf_func(y[index], preds[index])
 
-    # DEPRECATED
-    def apply_pure(self, x, y):
-
-        preds = self.model(x)
-        if torch.is_tensor(preds):
-            preds = preds.numpy()
-        preds = preds.squeeze()
-
-        lower = preds[:, 0]
-        upper = preds[:, 1]
-        preds = preds[:, 2]
-
-        self.container["cov"] = coverage(lower, upper, y)
-        self.container["width"] = MPIW(lower, upper, y)
-        self.container["perf"] = self.container.perf_func(y, preds)
-
-        if self.container.verbosity() > 0:
-            print()
-            print("Coverage:", self.container["cov"])
-            print("Average width:", self.container["width"])
-            print("Performance:", self.container["perf"])
-            print()
-
-    # DEPRECATED
-    def apply_conditional_pure(self, x, y):
-
-        preds = self.model(x)
-        if torch.is_tensor(preds):
-            preds = preds.numpy()
-        preds = preds.squeeze()
-
-        lower = preds[:, 0]
-        upper = preds[:, 1]
-        preds = preds[:, 2]
-
-        taxonomy = self.container.taxonomy_func().classify(x, y)
-        for t in sorted(self.conditional_thresholds.keys()):
-            index = (taxonomy == t)
-            if np.sum(index) > __CONDITIONAL_MIN__:
-                self.container["conditional_cov", t] = coverage(lower[index], upper[index], y[index])
-                self.container["conditional_width", t] = MPIW(lower[index], upper[index], y[index])
-                self.container["conditional_perf", t] = self.container.perf_func(y[index], preds[index])
-
 class RandomEnsembleConformalizer(EnsembleConformalizer):
 
     def train(self, x, y):
@@ -382,6 +325,7 @@ class RandomEnsembleConformalizer(EnsembleConformalizer):
             print("Conformalized with threshold:", self.threshold)
             print()
 
+    # NOT USED YET
     def train_conditional(self, x, y):
         super().train_conditional(x, y)
         total = self.conditional_thresholds
