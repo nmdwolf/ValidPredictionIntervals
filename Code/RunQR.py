@@ -5,28 +5,11 @@ from Code.QualityMeasures import *
 from Code.Load import *
 from Code.CP import *
 from Code.Data import *
+from Code.Utils import quantile_loss, pinball_loss, crossing_act
 
 from sklearn.metrics import r2_score
 import torch
 import torch.nn as nn
-
-def quantile_loss(true, pred, gamma):
-
-    diff = true - pred
-    return torch.mean(torch.max((gamma - 1) * diff, gamma * diff))
-
-def pinball_loss(pred, true, quantiles = [0.1, 0.9]):
-
-    # Third index for median !!!
-    return torch.mean(torch.stack([quantile_loss(true, pred[:, i], quantiles[i]) for i in range(len(quantiles))]))
-
-# removes crossing incidents
-def crossing_act(l):
-
-    a = l[..., 0]
-    b = a + nn.ReLU(l[..., 1] - a)
-
-    return torch.stack([a, b], axis = 1)
 
 def QR(container):
 

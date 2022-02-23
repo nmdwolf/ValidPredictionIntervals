@@ -6,38 +6,21 @@ from Code.QualityMeasures import *
 from Code.Load import *
 from Code.CP import *
 from Code.Data import *
+from Code.Utils import L2Loss, apply_dropout
 
 import torch
 import torch.nn as nn
 
-# Loss function can be derived from MLE with a Guassian distribution N(x^t w, 1).
-# L2 penalty can be derived from MAP with Gaussian prior N(0, l^-1) on weights.
-def Loss(model, X, true, l = 0):
-
-    preds = model(X)
-    loss = torch.mean(torch.square(true - preds)) / 2
-
-    penalty = 0
-    for param in model.parameters():
-        penalty += torch.norm(param, 2)**2
-    penalty *= l / X.shape[0]
-
-    return loss + penalty
-
-def ensemble(model, x, num = 50):
+def ensemble(model, x, num):
     out = np.zeros((x.shape[0], 2))
     for i in range(num):
         preds = model(x).numpy()
-        out[:, 0] = out[:, 0] + preds
-        out[:, 1] = out[:, 1] + np.square(preds)
+        out[:, 0] += preds
+        out[:, 1] += np.square(preds)
     out = out / num
 
     out[:, 1] = np.maximum(0, out[:, 1] - np.square(out[:, 0])) # zero-clipping to avoid NaN results in square root
     return out
-
-def apply_dropout(m):
-    if type(m) == nn.Dropout:
-        m.train()
 
 def DropoutEnsemble(container):
 
@@ -202,6 +185,6 @@ def run(data, seed, mode = True, conditional = None, conditional_params = None, 
     extra = {"reg": reg}
 
     tax = taxonomyFactory(conditional, conditional_params)
-    container = NNDataObject(data, "Dropout", seed = seed, taxonomy_func = tax, loss_func = Loss, cp_mode = mode, extra = extra, **params)
+    container = NNDataObject(data, "Dropout", seed = seed, taxonomy_func = tax, loss_func = L2Loss, cp_mode = mode, extra = extra, **params)
     container = DropoutEnsemble(container)
     container.export(FOLDER)

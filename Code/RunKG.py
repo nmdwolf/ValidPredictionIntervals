@@ -6,48 +6,22 @@ from Code.QualityMeasures import *
 from Code.Load import *
 from Code.CP import *
 from Code.Data import *
+from Code.Utils import GaussianLoss, ThresholdAct, apply_dropout
 
 from sklearn.metrics import r2_score
 import torch
 import torch.nn as nn
 
-def GaussianLoss(model, X, true, l = 0, regularization = 1e-8):
-
-    preds = model(X)
-    mse = torch.square(true - preds[:, 0])
-    var = torch.exp(preds[:, 1])
-    loss = torch.mean(mse / (var + regularization) + preds[:, 1]) / 2
-
-    penalty = 0
-    for param in model.parameters():
-        penalty += torch.norm(param, 2)**2
-    penalty *= l / X.shape[0]
-
-    return loss + penalty
-
-class Act(torch.nn.Module):
-    def __init__(self, threshold):
-        super().__init__()
-        self.threshold = threshold
-
-    def forward(self, l):
-        return torch.stack([l[:, 0], -torch.nn.Threshold(self.threshold, self.threshold)(-l[:, 1])], dim = 1)
-
-def apply_dropout(m):
-    if type(m) == nn.Dropout:
-        m.train()
-
 def ensemble(model, x, num):
-    out = np.zeros((x.shape[0], 3))
+    out = np.zeros((x.shape[0], 2))
     for i in range(num):
         preds = model(x).numpy()
-        out[:, 0] = out[:, 0] + preds[:, 0]
-        out[:, 1] = out[:, 1] + np.exp(preds[:, 1])
-        out[:, 2] = out[:, 2] + np.square(preds[:, 0])
+        out[:, 0] += preds[:, 0]
+        out[:, 1] += np.exp(preds[:, 1]) + np.square(preds[:, 0])
     out = out / num
 
-    out[:, 1] = np.maximum(0, out[:, 1] + out[:, 2] - np.square(out[:, 0])) # zero-clipping to avoid NaN results in square root
-    return out[:, :2]
+    out[:, 1] = np.maximum(0, out[:, 1] - np.square(out[:, 0])) # zero-clipping to avoid NaN results in square root
+    return out
 
 def KG(container):
 
@@ -84,7 +58,7 @@ def KG(container):
             nn.ReLU(),
             nn.Dropout(drop),
             nn.Linear(container.dim(), 2),
-            Act(act_threshold)
+            ThresholdAct(act_threshold)
         )
 
         for m in model:

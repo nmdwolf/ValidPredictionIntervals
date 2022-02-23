@@ -6,21 +6,15 @@ from Code.QualityMeasures import *
 from Code.Load import *
 from Code.CP import *
 from Code.Data import *
+from Code.Utils import GaussianLoss, ThresholdAct
 
 import torch
 import torch.nn as nn
 
-def GaussianLoss(preds, true):
-
-    a = torch.square(true - preds[:, 0])
-    b = torch.exp(preds[:, 1])
-    loss = 0.5 * torch.mean(torch.div(a, b + 1e-8) + preds[:, 1])
-    return loss
-
 # Fast Gradient Sign method for adversarial pertubations
 def perturb(model, x, y, epsilon = 0.1):
     delta = torch.zeros_like(x, requires_grad = True)
-    loss = GaussianLoss(model(x + delta), y)
+    loss = GaussianLoss(model, x + delta, y)
     loss.backward()
     return x + epsilon * delta.grad.detach().sign()
 
@@ -35,14 +29,6 @@ def ensemble(models, x):
     out = out / len(models)
     out[:, 1] = np.maximum(0, out[:, 1] - np.square(out[:, 0])) # zero-clipping to avoid NaN results in square root
     return out
-
-class Act(torch.nn.Module):
-    def __init__(self, threshold):
-        super().__init__()
-        self.threshold = threshold
-
-    def forward(self, l):
-        return torch.stack([l[:, 0], -torch.nn.Threshold(self.threshold, self.threshold)(-l[:, 1])], dim = 1)
 
 def DE(container):
 
@@ -79,7 +65,7 @@ def DE(container):
             nn.Linear(container.dim(), container.dim()),
             nn.ReLU(),
             nn.Linear(container.dim(), 2),
-            Act(act_threshold)
+            ThresholdAct(act_threshold)
         )
 
         for m in model:
@@ -114,15 +100,15 @@ def DE(container):
                     perturbed_x = perturb(model, batch_x, batch_y, epsilon = epsilon)
                     optimizer.zero_grad()
 
-                    loss = container.loss_func(model(batch_x), batch_y) + container.loss_func(model(perturbed_x), batch_y)
+                    loss = container.loss_func(model, batch_x, batch_y) + container.loss_func(model, perturbed_x, batch_y)
                     loss.backward()
 
                     optimizer.step()
 
                 model.eval()
-                x_ = perturb(model, X_val, y_val, epsilon = epsilon)
+                perturbed_x = perturb(model, X_val, y_val, epsilon = epsilon)
                 with torch.no_grad():
-                    loss = container.loss_func(model(X_val), y_val) + container.loss_func(model(x_), y_val)
+                    loss = container.loss_func(model, X_val, y_val) + container.loss_func(model, perturbed_x, y_val)
                     loss = loss.numpy()
 
                     train_losses[1:] = train_losses[:-1]
@@ -167,7 +153,7 @@ def DE(container):
                 perturbed_x = perturb(model, batch_x, batch_y, epsilon = epsilon)
                 optimizer.zero_grad()
 
-                loss = container.loss_func(model(batch_x), batch_y) + container.loss_func(model(perturbed_x), batch_y)
+                loss = container.loss_func(model, batch_x, batch_y) + container.loss_func(model, perturbed_x, batch_y)
                 loss.backward()
 
                 optimizer.step()
