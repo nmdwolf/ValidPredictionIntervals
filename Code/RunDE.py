@@ -75,51 +75,47 @@ def DE(container):
 
         m = copy.deepcopy(model)
 
-        if container.val_length() != 0:
+        optimizer = torch.optim.Adam(model.parameters(), lr = container.learning_rate(), weight_decay = container.l())
 
-            optimizer = torch.optim.Adam(model.parameters(), lr = container.learning_rate(), weight_decay = container.l())
+        for e in range(container.epochs()):
 
-            for e in range(container.epochs()):
+            model.train()
 
-                model.train()
+            shuffle_idx = np.arange(X.shape[0])
+            np.random.shuffle(shuffle_idx)
+            X = X[shuffle_idx]
+            y = y[shuffle_idx]
 
-                shuffle_idx = np.arange(X.shape[0])
-                np.random.shuffle(shuffle_idx)
-                X = X[shuffle_idx]
-                y = y[shuffle_idx]
+            for idx in range(0, X.shape[0], container.batch()):
 
-                for idx in range(0, X.shape[0], container.batch()):
+                cnt += 1
 
-                    cnt += 1
+                optimizer.zero_grad()
 
-                    optimizer.zero_grad()
+                batch_x = X[idx : min(idx + container.batch(), X.shape[0]), :]
+                batch_y = y[idx : min(idx + container.batch(), y.shape[0])]
 
-                    batch_x = X[idx : min(idx + container.batch(), X.shape[0]), :]
-                    batch_y = y[idx : min(idx + container.batch(), y.shape[0])]
+                perturbed_x = perturb(model, batch_x, batch_y, epsilon = epsilon)
+                optimizer.zero_grad()
 
-                    perturbed_x = perturb(model, batch_x, batch_y, epsilon = epsilon)
-                    optimizer.zero_grad()
+                loss = container.loss_func(model, batch_x, batch_y) + container.loss_func(model, perturbed_x, batch_y)
+                loss.backward()
 
-                    loss = container.loss_func(model, batch_x, batch_y) + container.loss_func(model, perturbed_x, batch_y)
-                    loss.backward()
+                optimizer.step()
 
-                    optimizer.step()
+            model.eval()
+            perturbed_x = perturb(model, X_val, y_val, epsilon = epsilon)
+            with torch.no_grad():
+                loss = container.loss_func(model, X_val, y_val) + container.loss_func(model, perturbed_x, y_val)
+                loss = loss.numpy()
 
-                model.eval()
-                perturbed_x = perturb(model, X_val, y_val, epsilon = epsilon)
-                with torch.no_grad():
-                    loss = container.loss_func(model, X_val, y_val) + container.loss_func(model, perturbed_x, y_val)
-                    loss = loss.numpy()
+                train_losses[1:] = train_losses[:-1]
+                train_losses[0] = loss
 
-                    train_losses[1:] = train_losses[:-1]
-                    train_losses[0] = loss
-
-                    if np.mean(train_losses) < best_loss:
-                        best_loss = np.mean(train_losses)
-                        best_epoch = e
-                        best_cnt = cnt
-        else:
-            print("No early stopping performed")
+                if np.mean(train_losses) < best_loss:
+                    best_loss = np.mean(train_losses)
+                    best_epoch = e
+                    best_cnt = cnt
 
         cnt = 0
         model = m
@@ -161,7 +157,7 @@ def DE(container):
         model_list.append(model)
 
         if container.verbosity() > 1:
-            print("Optimized network", i+1, " with", best_epoch, "epochs")
+            print("Optimized network", i + 1, " with", best_epoch + 1, "epochs")
 
     def ensemble_to_quantile(x):
         preds = ensemble(model_list, x)

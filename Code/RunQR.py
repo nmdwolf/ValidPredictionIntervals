@@ -59,55 +59,53 @@ def QR(container):
 
     optimizer = torch.optim.Adam(model.parameters(), lr = container.learning_rate(), weight_decay = container.l())
 
-    if container.val_length() > 0:
+    best_loss = 1e8
+    train_covs = np.zeros(container.val_length())
+    train_losses = np.full(container.val_length(), 1e10)
 
-        best_loss = 1e8
-        train_covs = np.zeros(container.val_length())
-        train_losses = np.full(container.val_length(), 1e10)
+    for e in range(container.epochs()):
 
-        for e in range(container.epochs()):
+        model.train()
 
-            model.train()
+        shuffle_idx = np.arange(X.shape[0])
+        np.random.shuffle(shuffle_idx)
+        X = X[shuffle_idx]
+        y = y[shuffle_idx]
 
-            shuffle_idx = np.arange(X.shape[0])
-            np.random.shuffle(shuffle_idx)
-            X = X[shuffle_idx]
-            y = y[shuffle_idx]
+        for idx in range(0, X.shape[0], container.batch()):
 
-            for idx in range(0, X.shape[0], container.batch()):
+            cnt += 1
 
-                cnt += 1
+            optimizer.zero_grad()
 
-                optimizer.zero_grad()
+            batch_x = X[idx : min(idx + container.batch(), X.shape[0]),:]
+            batch_y = y[idx : min(idx + container.batch(), y.shape[0])]
+            preds = model(batch_x)
+            loss = container.loss_func(preds, batch_y, train_quantiles)
 
-                batch_x = X[idx : min(idx + container.batch(), X.shape[0]),:]
-                batch_y = y[idx : min(idx + container.batch(), y.shape[0])]
-                preds = model(batch_x)
-                loss = container.loss_func(preds, batch_y, train_quantiles)
+            loss.backward()
+            optimizer.step()
 
-                loss.backward()
-                optimizer.step()
+        model.eval()
+        with torch.no_grad():
+            pred = model(X_val)
+            # loss = container.loss_func(pred, y_val, train_quantiles).numpy()
 
-            model.eval()
-            with torch.no_grad():
-                pred = model(X_val)
-                # loss = container.loss_func(pred, y_val, train_quantiles).numpy()
+            train_losses[1:] = train_losses[:-1]
+            train_losses[0] = MPIW(pred[:, 0], pred[:, 1], y_val)
+            train_covs[1:] = train_covs[:-1]
+            train_covs[0] = coverage(pred[:, 0], pred[:, 1], y_val)
 
-                train_losses[1:] = train_losses[:-1]
-                train_losses[0] = MPIW(pred[:, 0], pred[:, 1], y_val)
-                train_covs[1:] = train_covs[:-1]
-                train_covs[0] = coverage(pred[:, 0], pred[:, 1], y_val)
+            if (np.mean(train_losses) < best_loss) and (np.mean(train_covs) >= training_cov):
+                best_loss = np.mean(train_losses)
+                best_epoch = e
+                best_cnt = cnt
 
-                if (np.mean(train_losses) < best_loss) and (np.mean(train_covs) >= training_cov):
-                    best_loss = np.mean(train_losses)
-                    best_epoch = e
-                    best_cnt = cnt
+            if np.mean(train_covs) >= container.minimal_cov():
+                safe_epoch = e
 
-                if np.mean(train_covs) >= container.minimal_cov():
-                    safe_epoch = e
-
-        if container.verbosity() > 1:
-            print("Optimized network with", best_epoch, "epochs")
+    if container.verbosity() > 1:
+        print("Optimized network with", best_epoch + 1, "epochs")
 
     if best_epoch == container.epochs():
         if container.verbosity() > 1:
@@ -121,7 +119,6 @@ def QR(container):
     X = torch.from_numpy(data["X_train"]).float().requires_grad_(False)
     y = torch.from_numpy(data["y_train"]).float().requires_grad_(False)
 
-    # for e in range(container.epochs()):
     for e in range(best_epoch + 1):
 
         model.train()

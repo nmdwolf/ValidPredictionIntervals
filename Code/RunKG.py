@@ -106,12 +106,10 @@ def KG(container):
                     best_epoch = e
                     best_cnt = cnt
 
-    best_epoch = (best_epoch + 1) if container.val_length() > 0 else container.epochs()
     if container.verbosity() > 1:
-        print("Optimized network with", best_epoch, "epochs and dropout", best_model[1])
+        print("Optimized network with", best_epoch + 1, "epochs and dropout", best_model[1])
 
     cnt = 0
-    best_cnt = best_cnt if container.val_length() > 0 else np.Inf
 
     model = best_model[0]
     optimizer = torch.optim.Adam(model.parameters(), lr = container.learning_rate(), weight_decay = 0)
@@ -120,7 +118,7 @@ def KG(container):
     X = torch.from_numpy(data["X_train"]).float().requires_grad_(False)
     y = torch.from_numpy(data["y_train"]).float().requires_grad_(False)
 
-    for e in range(best_epoch):
+    for e in range(best_epoch + 1):
 
         if cnt > best_cnt:
             break

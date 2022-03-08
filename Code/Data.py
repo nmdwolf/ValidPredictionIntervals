@@ -201,7 +201,7 @@ class NNDataObject(DataObject):
         self.__learning_rate = learning_rate
         self.loss_func = loss_func
         self.__num = num
-        self.__val_length = val_length
+        self.__val_length = val_length if val_length > 0 else 1
 
     def batch(self):
         return self.__batch

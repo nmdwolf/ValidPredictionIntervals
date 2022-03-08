@@ -41,76 +41,15 @@ def DropoutEnsemble(container):
     best_cnt = np.Inf
     cnt = 0
 
-    if container.val_length() != 0:
+    best_loss = 1e8
+    train_losses = np.full(container.val_length(), 1e10)
 
-        best_loss = 1e8
-        train_losses = np.full(container.val_length(), 1e10)
+    for drop in container.drop():
 
-        for drop in container.drop():
+        drop = round(drop, 2)
+        l = (1 - drop) / 2 if container["reg"] else 0
 
-            drop = round(drop, 2)
-            l = (1 - drop) / 2 if container["reg"] else 0
-
-            model = nn.Sequential(
-                nn.Linear(X.shape[1], container.dim()),
-                nn.ReLU(),
-                nn.Dropout(drop),
-                nn.Linear(container.dim(), container.dim()),
-                nn.ReLU(),
-                nn.Dropout(drop),
-                nn.Linear(container.dim(), 1),
-                nn.Flatten(0, 1)
-            )
-
-            for m in model:
-                if isinstance(m, nn.Linear):
-                    nn.init.orthogonal_(m.weight)
-                    nn.init.constant_(m.bias, 0)
-
-            m = copy.deepcopy(model)
-
-            optimizer = torch.optim.Adam(model.parameters(), lr = container.learning_rate(), weight_decay = 0)
-            for e in range(container.epochs()):
-
-                model.train()
-
-                shuffle_idx = np.arange(X.shape[0])
-                np.random.shuffle(shuffle_idx)
-                X = X[shuffle_idx]
-                y = y[shuffle_idx]
-
-                for idx in range(0, X.shape[0], container.batch()):
-
-                    cnt += 1
-
-                    optimizer.zero_grad()
-
-                    batch_x = X[idx : min(idx + container.batch(), X.shape[0]), :]
-                    batch_y = y[idx : min(idx + container.batch(), y.shape[0])]
-                    loss = container.loss_func(model, batch_x, batch_y, l)
-
-                    loss.backward()
-                    optimizer.step()
-
-                model.eval()
-                model.apply(apply_dropout)
-                with torch.no_grad():
-                    loss = container.loss_func(model, X_val, y_val, l).numpy()
-                    train_losses[1:] = train_losses[:-1]
-                    train_losses[0] = loss
-
-                    if np.mean(train_losses) < best_loss:
-                        best_model = (m, drop)
-                        best_loss = np.mean(train_losses)
-                        best_epoch = e
-                        best_cnt = cnt
-
-        if container.verbosity() > 1:
-            print("Optimized network with", best_epoch, "epochs and dropout", best_model[1])
-
-    else:
-        print("No early stopping performed. Default dropout 0.1 used.")
-        best_model = (nn.Sequential(
+        model = nn.Sequential(
             nn.Linear(X.shape[1], container.dim()),
             nn.ReLU(),
             nn.Dropout(drop),
@@ -119,10 +58,55 @@ def DropoutEnsemble(container):
             nn.Dropout(drop),
             nn.Linear(container.dim(), 1),
             nn.Flatten(0, 1)
-        ), 0.1)
+        )
+
+        for m in model:
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
+        m = copy.deepcopy(model)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr = container.learning_rate(), weight_decay = 0)
+        for e in range(container.epochs()):
+
+            model.train()
+
+            shuffle_idx = np.arange(X.shape[0])
+            np.random.shuffle(shuffle_idx)
+            X = X[shuffle_idx]
+            y = y[shuffle_idx]
+
+            for idx in range(0, X.shape[0], container.batch()):
+
+                cnt += 1
+
+                optimizer.zero_grad()
+
+                batch_x = X[idx : min(idx + container.batch(), X.shape[0]), :]
+                batch_y = y[idx : min(idx + container.batch(), y.shape[0])]
+                loss = container.loss_func(model, batch_x, batch_y, l)
+
+                loss.backward()
+                optimizer.step()
+
+            model.eval()
+            model.apply(apply_dropout)
+            with torch.no_grad():
+                loss = container.loss_func(model, X_val, y_val, l).numpy()
+                train_losses[1:] = train_losses[:-1]
+                train_losses[0] = loss
+
+                if np.mean(train_losses) < best_loss:
+                    best_model = (m, drop)
+                    best_loss = np.mean(train_losses)
+                    best_epoch = e
+                    best_cnt = cnt
+
+    if container.verbosity() > 1:
+        print("Optimized network with", best_epoch + 1, "epochs and dropout", best_model[1])
 
     cnt = 0
-    best_cnt = best_cnt if container.val_length() > 0 else np.Inf
 
     model = best_model[0]
     optimizer = torch.optim.Adam(model.parameters(), lr = container.learning_rate(), weight_decay = 0)
