@@ -1,2 +1,3 @@
-Data/*/results/
+Data/*/results/*
+!Data/*/results/.gitkeep
 */__pycache__/
