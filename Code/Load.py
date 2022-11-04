@@ -280,7 +280,7 @@ def init(choice, seed = 2, test_frac = 0.2, val_frac = 0.5, verbose = False, sca
 
         names = df.columns
         target_names = names[8:16]
-        data_names = np.concatenate((names[0:8],names[17:]))
+        data_names = np.concatenate((names[1:8],names[17:]))
         X = df.loc[:, data_names].values
         y = grade.values
 
